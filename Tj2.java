@@ -1,3 +1,5 @@
+import java.security.Permission;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.List;
@@ -87,22 +89,39 @@ public class Tj2 {
 		PrintStream origOut = System.out; // make a backup of the original stdout
 		PrintStream origErr = System.err;
 		System.setIn(in_stream);
-		//System.setOut(new PrintStream(out_stream));
-		//System.setErr(new PrintStream(err_stream));
+		System.setOut(new PrintStream(out_stream));
+		System.setErr(new PrintStream(err_stream));
 		
 		Object[] arguments = new Object[1]; // need to create empty object of String args[] expected by main
 		arguments[0] = new String[] {}; // TODO: is there a way to do this inline with main.invoke?
+		forbidSystemExitCall();
 		try {
 			main.invoke(null, arguments);
-		} catch (Exception e) {
-			//e.printStackTrace();
+		} catch (ExitTrappedException e) {
+			// this is thrown by the securityManager when the program calls System.exit()
+			// do nothing here, the output might still be OK
+			if (DEBUG) origOut.println("Program called System.exit()");
+		} catch (InvocationTargetException e) {
+			// this is for every other exception by the program.
+			// this counts as a RTE
+			//e.printStackTrace(); // TODO: print it to err_stream
+			restoreEnv(origIn, origOut, origErr);
+			if (DEBUG) System.out.println("Program threw an exception");
 			return Result.RTE;
 		}
-
-		// restore stdin, stdout and stderr
-		System.setIn(origIn);
-		//System.setOut(new PrintStream(origOut));
-		//System.setErr(new PrintStream(origErr));
+		catch (IllegalAccessException e) {
+			// wtf
+			restoreEnv(origIn, origOut, origErr);
+			if (DEBUG) System.out.println("IllegalAccessException when invoking main");
+			return Result.RTE;
+		}
+		catch (IllegalArgumentException e) {
+			// program expected arguments??
+			restoreEnv(origIn, origOut, origErr);
+			if (DEBUG) System.out.println("IllegalArgumentException when invoking main");
+			return Result.RTE;
+		}
+		restoreEnv(origIn, origOut, origErr);
 
 		// if program broke lines with \r\n, repace with \n only
 		String out = out_stream.toString().replaceAll("\\r", "");
@@ -119,6 +138,13 @@ public class Tj2 {
 			return Result.WA;
 	}
 
+	// restore the environment: set the original stdin, stdout and stderr and re-enable System.exit
+	private static void restoreEnv(InputStream origIn, PrintStream origOut, PrintStream origErr) {
+		System.setIn(origIn);
+		System.setOut(new PrintStream(origOut));
+		System.setErr(new PrintStream(origErr));
+		enableSystemExitCall();
+	}
 
 	// read all files matching a given pattern (like "vhod*.txt") in directory dir
 	// returns HashMap, where keys are the file indices (filename without "vhod" and ".txt") and values are file contents
@@ -153,5 +179,28 @@ public class Tj2 {
 			System.exit(0);
 		}
 		return files;
+	}
+
+	/*
+		For simplicity's sake, please consider not adding new .java files to the project.
+		I would like to avoid the need to package it into a .jar, because compiling
+		and running a .java is a lot more native to students; the target audience.
+	*/
+	// A security manager implementation that will catch calls to System.exit
+	private static class ExitTrappedException extends SecurityException {/* burger time */}
+	private static void forbidSystemExitCall() {
+		// https://stackoverflow.com/a/5401402
+		final SecurityManager securityManager = new SecurityManager() {
+			@Override
+			public void checkPermission(Permission permission) {
+				if (permission.getName().startsWith("exitVM")) {
+					throw new ExitTrappedException();
+				}
+			}
+		};
+		System.setSecurityManager(securityManager);
+	}
+	private static void enableSystemExitCall() {
+		System.setSecurityManager(null);
 	}
 }
