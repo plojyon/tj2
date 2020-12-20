@@ -1,28 +1,23 @@
-// TODO: remove unneccessary dependencies
-//import java.util.Scanner;
 import java.io.*;
 import java.nio.file.*;
-//import java.util.ArrayList;
-//import java.util.Arrays;
 import java.util.List;
 import java.util.HashMap;
+import java.lang.reflect.*;
 
 public class Tj2 {
-	public static void main(String[] args) {
-		System.out.print("Got "+args.length+" args: ");
-		for (String arg: args) {
-			System.out.print(arg+" ");
-		}
-		System.out.println();
+	//private static HashMap<String,Result> results = new HashMap<String,Result>(); // 01 > OK; 02 > WA; ...
+	private static boolean DEBUG = false;
 
+	public static void main(String[] args) {
 		if (args.length < 1 || args.length > 3) {
-			System.out.println("usage: tj.exe <program> <input-dir> <output-dir>");
+			System.out.println("uporaba: Tj2 <program> <input-dir> <output-dir>");
 			System.exit(0);
 		}
 
 		String program = args[0];
 		Path input_dir;
 		Path output_dir;
+		int time_limit = 1;
 
 		if (args.length > 1)
 			input_dir = Paths.get(args[1]);
@@ -34,11 +29,104 @@ public class Tj2 {
 		else
 			output_dir = Paths.get(".");
 
-		// read all input files ("vhod*.txt")
-		HashMap<String,String> vhodi = new HashMap<String,String>();
-		try (DirectoryStream<Path> stream = Files.newDirectoryStream(input_dir, "vhod*.txt")) {
+		
+		HashMap<String,String> vhodi   = getFiles(input_dir, "vhod*.txt");
+		HashMap<String,String> izhodi  = getFiles(input_dir, "izhod*.txt");
+		
+		if (vhodi.size() != izhodi.size()) {
+			System.out.println("Pozor: neenako stevilo vhodov in izhodov!");
+		}
+		if (DEBUG) System.out.println("Prebrano "+vhodi.size()+" vhodov in "+izhodi.size()+" izhodov.");
+
+		int ok_count = 0;
+		int not_ok_count = 0;
+		try {
+			Method main = Class.forName(program).getMethod("main", String[].class);
+
+			for (String vhod: vhodi.keySet()) {
+				if (DEBUG) System.out.println("Testiram "+vhod);
+				if (!izhodi.containsKey(vhod)) {
+					System.out.println("POZOR: "+vhod+" nima izhodne datoteke! Ignoriram ...");
+					continue;
+				}
+				Result result = testProgram(main, vhodi.get(vhod), izhodi.get(vhod), time_limit);
+				System.out.println(vhod+" ... "+result);
+
+				if (result == Result.OK) ok_count++;
+				else not_ok_count++;
+			}
+		}
+		catch (ClassNotFoundException e) {
+			System.err.println("Razred "+program+" ne obstaja!");
+			System.exit(0);
+		}
+		catch (NoSuchMethodException e) {
+			System.err.println("Razred "+program+" nima metode main!");
+			System.exit(0);
+		}
+		System.out.println("Tocke: "+ok_count+"/"+(ok_count+not_ok_count)+" Lp");
+	}
+
+	private static enum Result {
+		WA, // wrong answer
+		TLE, // time limit exceeded
+		RTE, // runtime error (exception thrown or stderr is non-empty)
+		OK // okay
+	}
+
+	// run the main method of program with given input, expected output and time limit
+	// returns the test result
+	// also writes the outputs to a global HashMap<String,String> outputs
+	// TODO: make this async?
+	public static Result testProgram(Method main, String input, String expected_out, int time_limit) {
+		// change stdin and stdout to a custom PrintStream, to capture program output
+		ByteArrayInputStream  in_stream  = new ByteArrayInputStream(input.getBytes());
+		ByteArrayOutputStream out_stream = new ByteArrayOutputStream();
+		ByteArrayOutputStream err_stream = new ByteArrayOutputStream();
+		InputStream origIn  = System.in;
+		PrintStream origOut = System.out; // make a backup of the original stdout
+		PrintStream origErr = System.err;
+		System.setIn(in_stream);
+		//System.setOut(new PrintStream(out_stream));
+		//System.setErr(new PrintStream(err_stream));
+		
+		Object[] arguments = new Object[1]; // need to create empty object of String args[] expected by main
+		arguments[0] = new String[] {}; // TODO: is there a way to do this inline with main.invoke?
+		try {
+			main.invoke(null, arguments);
+		} catch (Exception e) {
+			//e.printStackTrace();
+			return Result.RTE;
+		}
+
+		// restore stdin, stdout and stderr
+		System.setIn(origIn);
+		//System.setOut(new PrintStream(origOut));
+		//System.setErr(new PrintStream(origErr));
+
+		// if program broke lines with \r\n, repace with \n only
+		String out = out_stream.toString().replaceAll("\\r", "");
+
+		// TODO: write stdout/stderr/stacktrace to HashMap<String,String> outputs
+
+		if (err_stream.toString().length() > 0) {
+			return Result.RTE;
+		}
+		
+		if (out.equals(expected_out))
+			return Result.OK;
+		else
+			return Result.WA;
+	}
+
+
+	// read all files matching a given pattern (like "vhod*.txt") in directory dir
+	// returns HashMap, where keys are the file indices (filename without "vhod" and ".txt") and values are file contents
+	private static HashMap<String,String> getFiles(Path dir, String pattern) {
+		HashMap<String,String> files = new HashMap<String,String>();
+		try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, pattern)) {
 			for (Path file : stream) {
-				System.out.println("Reading: "+file.toString());
+				if (DEBUG) System.out.println("Berem "+file);
 				List<String> read = Files.readAllLines(file);
 				
 				// flatten List<String> to a single \n-separated string
@@ -49,38 +137,21 @@ public class Tj2 {
 				}
 
 				String filename = file.getFileName().toString();
-				String fileIndex = filename.substring(4, filename.length()-4); // cut away "vhod" and ".txt"
 
-				vhodi.put(fileIndex, buffer.toString());
+				// strip "vhod"/"izhod" and ".txt" from filenames for HashMap keys
+				if (filename.startsWith("vhod"))
+					filename = filename.substring(4, filename.length()-4); // "vhod" and ".txt"
+				else if (filename.startsWith("izhod"))
+					filename = filename.substring(5, filename.length()-4); // "izhod" and ".txt"
+
+				files.put(filename, buffer.toString());
 			}
 		}
 		catch (IOException e) {
-			System.out.println("Napaka pri branju iz "+dir);
-
-			// System.out.println("Sporocilo napake: "+e.getMessage());
-			
-			// e.getMessage() is useless for some reason... Workaround:
-			// print stacktrace to a String and print the first line,
-			// which should be the error message
-			StringWriter sw = new StringWriter();
-			PrintWriter pw = new PrintWriter(sw);
-			e.printStackTrace(pw);
-			String stacktrace = sw.toString();
-			String firstline = stacktrace.split("\\r?\\n")[0]; // split by newline and grab the first element
-
-			System.out.println("Sporocilo napake: "+firstline);
-
-			// this is equally functional :(
-			// but I'm too proud of my hacky solution
-			//System.out.println("Sporocilo napake: "+e.toString());
-
+			System.out.println("Napaka pri branju iz "+dir.toString());
+			System.out.println("Sporocilo napake: "+e.toString());
 			System.exit(0);
 		}
-
-
-		// TODO:
-		// run program for each input
-		// save outputs to files
-		// lp
+		return files;
 	}
 }
