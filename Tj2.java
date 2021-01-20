@@ -52,7 +52,7 @@ public class Tj2 {
 					continue;
 				}
 				Result result = testProgram(main, vhodi.get(vhod), izhodi.get(vhod), time_limit);
-				System.out.println(vhod+" ... "+result);
+				System.out.println(vhod+" ... "+colorize(result));
 
 				if (result == Result.OK) ok_count++;
 				else not_ok_count++;
@@ -75,6 +75,21 @@ public class Tj2 {
 		RTE, // runtime error (exception thrown or stderr is non-empty)
 		OK // okay
 	}
+
+	private static String colorize(Result result){
+    switch(result){
+      case OK:
+        return "\033[0;32[+]\033[0m";
+      case WA:
+        return "\033[0;31m[-]\033[0m";
+      case TLE:
+        return "\033[1;33[BRUH]\033[0m";
+      case RTE:
+        return "\033[1;35[ERR]\033[0m";
+      default:
+        return "Shit, something broke";
+      }
+    }
 
 	// run the main method of program with given input, expected output and time limit
 	// returns the test result
