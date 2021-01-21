@@ -79,15 +79,15 @@ public class Tj2 {
 	private static String colorize(Result result){
     switch(result){
       case OK:
-        return "\033[0;32[+]\033[0m";
+        return "\033[0;32m[+] OK\033[0m";
       case WA:
-        return "\033[0;31m[-]\033[0m";
+        return "\033[0;31m[-] WA\033[0m";
       case TLE:
-        return "\033[1;33[BRUH]\033[0m";
+        return "\033[1;33m[*] TLE\033[0m";
       case RTE:
-        return "\033[1;35[ERR]\033[0m";
+        return "\033[1;35m[?] RTE\033[0m";
       default:
-        return "Shit, something broke";
+        return "Shit";
       }
     }
 
