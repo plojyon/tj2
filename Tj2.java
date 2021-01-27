@@ -5,6 +5,8 @@ import java.nio.file.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import jdk.nashorn.api.tree.ContinueTree;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.lang.reflect.*;
@@ -52,24 +54,28 @@ public class Tj2 {
 		for (String izhod: izhodi.keySet()) {
 			if (DEBUG) System.out.println(izhodi.get(izhod));
 		}
-		// associate inputs with outputs
-		for (String izhod: izhodi.keySet()) {
-			if (vhodi.containsKey(izhod))
-				izhodi.get(izhod).addInput(vhodi.get(izhod));
-			else if (javaTests.containsKey(izhod))
-				izhodi.get(izhod).addInput(javaTests.get(izhod));
-			else
-				System.out.println("Izhod "+izhod+" nima pripadajocega vhoda! Ignoriram ...");
-		}
 
-		// Create Test objects
+		// create Test objects
 		ArrayList<Test> tests = new ArrayList<Test>();
 		Method main = getMain(program);
 		for (String fname: izhodi.keySet()) {
-			IOFile file = izhodi.get(fname);
-			Method method = file.isJava()? getMain("Test"+file.getName()) : main;
+			IOFile file;
+
+			// associate inputs with outputs
+			if (vhodi.containsKey(fname))
+				file = izhodi.get(fname).addInput(vhodi.get(fname));
+			else if (javaTests.containsKey(fname))
+				file = izhodi.get(fname).addInput(javaTests.get(fname));
+			else {
+				System.out.println("Pozor: izhod " + fname + " nima pripadajocega vhoda! Ignoriram ...");
+				continue;
+			}
+
+			Method method = file.isJava() ? getMain("Test" + file.getName()) : main;
 			tests.add(new Test(file, method, timeLimit));
 		}
+		if (DEBUG) System.out.println("Imam teste: " + tests);
+
 
 		// run all tests
 		int okCount = 0;
@@ -368,14 +374,16 @@ public class Tj2 {
 		}
 
 		// merges with another IOFile (treat it as an input)
-		public void addInput(IOFile in) {
+		public IOFile addInput(IOFile in) {
 			this.isJava = in.isJava();
 			this.input = in.getInput();
+			return this;
 		}
 
 		// merges with another IOFile (treat it as an output)
-		public void addOutput(IOFile out) {
+		public IOFile addOutput(IOFile out) {
 			this.output = out.getOutput();
+			return this;
 		}
 
 		public String getName() {
