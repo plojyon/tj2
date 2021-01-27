@@ -3,28 +3,25 @@ import java.security.Permission;
 import java.io.*;
 import java.nio.file.*;
 import java.util.List;
-
-import javax.lang.model.util.ElementScanner6;
+import java.util.concurrent.TimeUnit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.lang.reflect.*;
 
 public class Tj2 {
 	private static boolean DEBUG = false;
 
 	public static void main(String[] args) {
-		if (args.length < 1 || args.length > 3 || (args[0] != null && args[0].equals("help"))) {
-			System.out.println("uporaba: Tj2 <program> [input-dir] [output-dir]");
+		if (args.length < 1 || args.length > 4 || (args[0] != null && args[0].equals("help"))) {
+			System.out.println("uporaba: Tj2 <program> [input-dir] [output-dir] [time-limit]");
 			System.exit(0);
 		}
 
 		String program = args[0];
 		Path inputDir;
 		Path outputDir;
-
-		int timeLimit = 1; // TODO: implement time limit
+		int timeLimit; // in milliseconds
 
 		if (args.length > 1)
 			inputDir = Paths.get(args[1]);
@@ -35,6 +32,11 @@ public class Tj2 {
 			outputDir = Paths.get(args[2]);
 		else
 			outputDir = Paths.get(".");
+
+		if (args.length > 3)
+			timeLimit = (int)(1000 * Float.parseFloat(args[3]));
+		else
+			timeLimit = 1000;
 
 		// read all files
 		HashMap<String, IOFile> vhodi      = getFiles(inputDir, "vhod*.txt");
@@ -66,7 +68,7 @@ public class Tj2 {
 		for (String fname: izhodi.keySet()) {
 			IOFile file = izhodi.get(fname);
 			Method method = file.isJava()? getMain("Test"+file.getName()) : main;
-			tests.add(new Test(file, method, 1));
+			tests.add(new Test(file, method, timeLimit));
 		}
 
 		// run all tests
@@ -75,35 +77,36 @@ public class Tj2 {
 		for (Test test: tests) {
 			if (DEBUG) System.out.println("Testiram "+test.getName());
 			
-			Result result = test.run(timeLimit);
-			System.out.println(test.getName()+" ... "+colorize(result));
+			test.run();
+			System.out.println(test.getName()+" ... "+colorize(test.getResult()));
 
-			if (result == Result.OK) okCount++;
+			if (test.getResult() == Result.OK) okCount++;
 			else notOkCount++;
 		}
 		
 		System.out.println("Tocke: "+okCount+"/"+(okCount+notOkCount)+" Lp");
 
 		// TODO: uncomment when ready
-		//System.out.println(saveOutputFile(outputDir, tests));
+		//generateOutputFile(outputDir, tests);
 	}
 
-	private static String saveOutputFile(Path outputDir, ArrayList<Test> results) {
-		boolean ok = false;
-		/*
-			Test
-				getName() // get name of test (usually the index number, but Tj2 supports anything)
-				getInput() // return given input (will return souce of .java test if it's a java test)
-				isJava() // is this a java test?
-				getExpectedOut() // return expected stdout
-				getOut() // return stdout
-				getErr() // return stderr
-				getResult() // return Result enum (OK, WA, RTE, TLE)
-		*/
-		if (ok)
-			return "Izhodna datoteka pripravljena na "+outputDir;
-		else 
-			return "Ni mogoce shraniti izhodne datoteke: Error: method saveOutputFile not implemented";
+	private static String generateOutputFile(ArrayList<Test> results) {
+		StringBuilder sb = new StringBuilder();
+		for (Test test : results) {
+			sb.append(test.getName());
+			sb.append(": ");
+			sb.append(test.getResult());
+			sb.append("<br/>");
+			/*
+			 * Test getName() // get name of test (usually the index number, but Tj2
+			 * supports anything) getInput() // return given input (will return souce of
+			 * .java test if it's a java test) isJava() // is this a java test?
+			 * getExpectedOut() // return expected stdout getOut() // return stdout getErr()
+			 * // return stderr getResult() // return Result enum (OK, WA, RTE, TLE)
+			 */
+		}
+		sb.append("<b>Error 569: Not implemented</b>");
+		return sb.toString();
 	}
 
 	private static enum Result {
@@ -200,7 +203,7 @@ public class Tj2 {
 	private static void enableSystemExitCall() {
 		System.setSecurityManager(null);
 	}
-	private static class Test {
+	private static class Test implements Runnable {
 		private IOFile file;
 		private Method main; // main method (either the java test, or our program)
 		private int timeLimit;
@@ -243,7 +246,8 @@ public class Tj2 {
 		// returns the test result
 		// also writes the outputs to a global HashMap<String,String> outputs
 		// DO NOT ATTEMPT TO MAKE THIS ASYNC! The restoreEnv() hack will break in an async environemnt!!!
-		public Result run(int timeLimit) {
+		@SuppressWarnings("deprecation") // ok boomer
+		public void run() {
 			// change stdin and stdout to a custom PrintStream, to capture program output
 			ByteArrayInputStream   inStream = new ByteArrayInputStream(this.file.getInput().getBytes());
 			ByteArrayOutputStream outStream = new ByteArrayOutputStream();
@@ -256,27 +260,46 @@ public class Tj2 {
 			System.setErr(new PrintStream(errStream));
 			
 			forbidSystemExitCall();
+			boolean tle = true;
+			String err = "";
+			Thread parent = Thread.currentThread();
+			Object[] args = new Object[] { this.main, err, parent }; // this feels like opening a shoe box with a screwdriver
+
+			Thread program = new Thread(new Runnable() {
+				Object[] arguments = args; // must be an object[] so that this thread modifies the originals
+
+				public void run() {
+					try {
+						((Method)this.arguments[0]).invoke(null, new Object[] { new String[] {} });
+						((Thread)this.arguments[2]).interrupt();
+					} catch (ExitTrappedException e) {
+						// this is thrown by the securityManager when the program calls System.exit()
+						// do nothing here, the output might still be OK
+					} catch (InvocationTargetException e) {
+						// this is for every other exception by the program.
+						// this counts as a RTE
+
+						// print stack trace to stderr
+						StringWriter errata = new StringWriter();
+						e.printStackTrace(new PrintWriter(errata));
+						this.arguments[1] += errata.toString();
+					} catch (IllegalAccessException e) {
+						// wtf
+						this.arguments[1] += "Tj2: IllegalAccessException when invoking main";
+					} catch (IllegalArgumentException e) {
+						// program expected arguments??
+						this.arguments[1] += "Tj2: IllegalArgumentException when invoking main";
+					}
+				};
+			});
 			try {
-				this.main.invoke(null, new Object[] {new String[]{}});
-			} catch (ExitTrappedException e) {
-				// this is thrown by the securityManager when the program calls System.exit()
-				// do nothing here, the output might still be OK
-			} catch (InvocationTargetException e) {
-				// this is for every other exception by the program.
-				// this counts as a RTE
-				
-				// print stack trace to stderr
-				StringWriter errata = new StringWriter();
-				e.printStackTrace(new PrintWriter(errata));
-				this.stderr += errata.toString();
+				program.start();
+				TimeUnit.MILLISECONDS.sleep(this.timeLimit);
+				program.stop(); // This is deprecated since Java 1.2, but it does exactly what I need
 			}
-			catch (IllegalAccessException e) {
-				// wtf
-				this.stderr += "Tj2: IllegalAccessException when invoking main";
-			}
-			catch (IllegalArgumentException e) {
-				// program expected arguments??
-				this.stderr += "Tj2: IllegalArgumentException when invoking main";
+			catch (InterruptedException e) {
+				// program finished before the timer was over
+				tle = false;
 			}
 			finally {
 				restoreEnv(origIn, origOut, origErr);
@@ -295,9 +318,11 @@ public class Tj2 {
 			else
 				this.result = Result.WA;
 
+			if (tle)
+				this.result = Result.TLE;
+
 			if (DEBUG) System.out.println(this.getName()+" output length: "+this.stdout.length());
 			if (DEBUG) System.out.println(this.getName()+" expected length: "+this.file.getOutput().length());
-			return this.result;
 		}
 	}
 	private static class IOFile {
