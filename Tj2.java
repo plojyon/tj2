@@ -5,8 +5,6 @@ import java.nio.file.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import jdk.nashorn.api.tree.ContinueTree;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.lang.reflect.*;
@@ -15,8 +13,21 @@ public class Tj2 {
 	private static boolean DEBUG = false;
 
 	public static void main(String[] args) {
-		if (args.length < 1 || args.length > 4 || (args[0] != null && args[0].equals("help"))) {
-			System.out.println("uporaba: Tj2 <program> [input-dir] [output-dir] [time-limit]");
+		if (args.length < 1 || args.length > 3 || args[0].equals("help")) {
+			System.out.println("uporaba: Tj2 <program> [time-limit] [input-dir]");
+			System.out.println("primer: Tj2 DN04");
+			System.out.println("primer: Tj2 DN04 5");
+			System.out.println("primer: Tj2 DN04 1.5 ./testi");
+			System.out.println("Pozor: pred zagonom Tj2 je potrebno program (in teste) prevesti (javac *.java)");
+			System.out.println("");
+			System.out.println("Legenda rezultatov:");
+			System.out.println(colorize(Result.OK) + " ... ok");
+			System.out.println(colorize(Result.WA) + " ... wrong answer");
+			System.out.println(colorize(Result.TLE) + " ... time limit exceeded");
+			System.out.println(colorize(Result.RTE) + " ... runtime error");
+			System.out.println("");
+			System.out.println("Z uporabo programa soglasate, da vase osebne podatke pustim pri miru");
+			System.out.println("Hvala da izbirate prosto programsko opremo.");
 			System.exit(0);
 		}
 
@@ -26,19 +37,22 @@ public class Tj2 {
 		int timeLimit; // in milliseconds
 
 		if (args.length > 1)
-			inputDir = Paths.get(args[1]);
+			timeLimit = (int) (1000 * Float.parseFloat(args[1]));
 		else
-			inputDir = Paths.get(".");
+			timeLimit = 1000;
 
+		/*
 		if (args.length > 2)
 			outputDir = Paths.get(args[2]);
 		else
 			outputDir = Paths.get(".");
+		*/
+		outputDir = Paths.get("."); // temporarily disabled
 
-		if (args.length > 3)
-			timeLimit = (int)(1000 * Float.parseFloat(args[3]));
+		if (args.length > 2)
+			inputDir = Paths.get(args[1]);
 		else
-			timeLimit = 1000;
+			inputDir = Paths.get(".");
 
 		// read all files
 		HashMap<String, IOFile> vhodi      = getFiles(inputDir, "vhod*.txt");
@@ -92,26 +106,63 @@ public class Tj2 {
 		
 		System.out.println("Tocke: "+okCount+"/"+(okCount+notOkCount)+" Lp");
 
-		// TODO: uncomment when ready
-		//generateOutputFile(outputDir, tests);
+		// save output to file (result.html)
+		String htmlReport = generateOutputFile(tests);
+		try {
+			FileWriter myWriter = new FileWriter(outputDir + "/report.html");
+			myWriter.write(htmlReport);
+			myWriter.close();
+			System.out.println("Podrobno porocilo shranjeno v "+outputDir+"/report.html");
+		} catch (IOException e) {
+			System.out.println("Prislo je do napake pri zapisovanju v datoteko.");
+			System.out.println(e);
+			e.printStackTrace();
+		}
+		
+		System.out.println("\nHvala ker uporabljate Tj2");
 	}
 
 	private static String generateOutputFile(ArrayList<Test> results) {
 		StringBuilder sb = new StringBuilder();
-		for (Test test : results) {
-			sb.append(test.getName());
-			sb.append(": ");
-			sb.append(test.getResult());
-			sb.append("<br/>");
-			/*
-			 * Test getName() // get name of test (usually the index number, but Tj2
-			 * supports anything) getInput() // return given input (will return souce of
-			 * .java test if it's a java test) isJava() // is this a java test?
-			 * getExpectedOut() // return expected stdout getOut() // return stdout getErr()
-			 * // return stderr getResult() // return Result enum (OK, WA, RTE, TLE)
-			 */
+		sb.append("<span class='button' onclick='openall()'>Odpri vse</span>");
+		sb.append("<span class='button' onclick='openwa()'>Odpri napacne</span>");
+		sb.append("<span class='button' onclick='closeall()'>Zapri vse</span>");
+		for (Test test: results) {
+			sb.append("<details>");
+				sb.append("<summary class='"+test.getResult()+"'>");
+					sb.append("<span class='name'>" + test.getName() + "</span>");
+					sb.append("<span class='result'>" + test.getResult() + "</span>");
+				sb.append("</summary>");
+				sb.append("<div class='details'>");
+					sb.append("<fieldset class='output code'><legend>Vas izhod</legend>" + test.getOut().replace("\n", "<br>") + "</fieldset>");
+					sb.append("<fieldset class='expected code'><legend>Pricakovan izhod</legend>" + test.getExpectedOut().replace("\n", "<br>") + "</fieldset>");
+					if (!test.getErr().equals("null"))
+						sb.append("<fieldset class='stderr code'><legend>Izhod stderr</legend>" + test.getErr().replace("\n", "<br>") + "</fieldset>");
+				sb.append("</div>");
+			sb.append("</details>");
 		}
-		sb.append("<b>Error 569: Not implemented</b>");
+		sb.append("<style>");
+			sb.append("body{background-color: #07080B; color: #999999; font-family:sans-serif; font-size: 20px}");
+			sb.append(".OK{color:#96AB78}");
+			sb.append(".WA{color:#A15A5E}");
+			sb.append(".RTE{color:#8F71A2}");
+			sb.append(".TLE{color:#B69963}");
+			sb.append(".name{margin: 0.5em 1em}");
+			sb.append("summary {font-size: 1.1em; font-weight: bold; cursor: pointer}");
+			sb.append("fieldset{border: 1px solid #999999}");
+			sb.append(".code{font-family:monospace; border: 1px solid #999999}");
+			sb.append(".details{display:grid; grid-template-rows:2; grid-template-columns:1; margin-bottom: 1em}");
+			sb.append(".output{grid-column:1 / span 1; grid-row: 1 / span 1;}");
+			sb.append(".expected{grid-column:2 / span 1; grid-row: 1 / span 1;}");
+			sb.append(".stderr{grid-column:1 / span 2; grid-row: 1 / span 1;}");
+
+			sb.append(".button {cursor: pointer; border: 1px solid #999999; border-radius: 5px; padding: 0.5em 1em; margin: 1em; display:inline-block; background-color: rgba(0,0,0,0.5)}");
+		sb.append("</style>");
+		sb.append("<script>");
+			sb.append("function openall() {Array.from(document.querySelectorAll('summary')).forEach(function(obj, idx) {obj.parentElement.open = true;});}");
+			sb.append("function closeall() {Array.from(document.querySelectorAll('summary')).forEach(function(obj, idx) {obj.parentElement.open = false;});}");
+			sb.append("function openwa() {Array.from(document.querySelectorAll('summary:not(.ok)')).forEach(function(obj, idx) {obj.parentElement.open = true;});}");
+		sb.append("</script>");
 		return sb.toString();
 	}
 
@@ -136,6 +187,8 @@ public class Tj2 {
 				return "Shit";
 		}
 	}
+
+	
 
 	// restore the environment: set the original stdin, stdout and stderr and re-enable System.exit
 	private static void restoreEnv(InputStream origIn, PrintStream origOut, PrintStream origErr) {
@@ -178,7 +231,7 @@ public class Tj2 {
 		try {
 			return Class.forName(program).getMethod("main", String[].class);
 		} catch (ClassNotFoundException e) {
-			System.err.println("Razred " + program + " ne obstaja!");
+			System.err.println("Razred " + program + " ne obstaja! Si pognal `javac *.java`?");
 			System.exit(0);
 		} catch (NoSuchMethodException e) {
 			System.err.println("Razred " + program + " nima metode main!");
