@@ -6,7 +6,7 @@ tj.exe is a program used to test Java programs used by the uni-lj Programiranje 
 To use, copy Tj2.java into the folder with your program and run  
 `javac *.java`  
 to compile your program and tests, then run  
-`java Tj2 \<program\> \[time-limit\] \[input-dir\]`  
+`java Tj2 <program> [time-limit] [input-dir]`  
 to evaluate your program with Tj2 (parameters in \[square brackets\] are optional).  
 
 To permanently install Tj2, copy it to some folder on your computer, then run  
