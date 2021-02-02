@@ -11,6 +11,7 @@ to evaluate your program with Tj2 (parameters in \[square brackets\] are optiona
 
 To permanently install Tj2, copy it to some folder on your computer, then run  
 `javac Tj2.java`  
-to compile Tj2 in that folder. After adding the folder to your classpath using  
-``export CLASSPATH="${CLASSPATH};`pwd`"``  
+to compile Tj2 in that folder. After adding the folder to your classpath using the following:  
+* Linux: ``export CLASSPATH="${CLASSPATH}:`pwd`"``  
+* Windows: you will need to manually add the path to your Tj2 installation folder. Search for "environment variables" in settings, then edit the CLASSPATH variable to add the directory. The entry separator is `;`  
 you will be able to run `java Tj2` from anywhere, without having to copy or recompile Tj2.
